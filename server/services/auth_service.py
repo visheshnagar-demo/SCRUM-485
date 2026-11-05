@@ -1,30 +1,19 @@
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from server.database import get_db
+from server.config import settings
+from server.database import get_db, verify_password, hash_password
 from server.models.user import User
+from server.schemas.user import UserCreate, UserLogin
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production-scrum485")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        pwd_bytes = plain_password.encode("utf-8")[:72]
-        hash_bytes = hashed_password.encode("utf-8")
-        return bcrypt.checkpw(pwd_bytes, hash_bytes)
-    except Exception:
-        return False
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/auth/login", auto_error=False
+)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -33,56 +22,82 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(
-            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(
+        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
 
 
-class AuthService:
-    @staticmethod
-    def authenticate(db: Session, email: str, password: str) -> Optional[User]:
-        user = db.query(User).filter(User.email == email.lower().strip()).first()
-        if not user:
-            return None
-        if not verify_password(password, user.hashed_password):
-            return None
-        return user
+def authenticate_user(db: Session, credentials: UserLogin) -> Optional[User]:
+    user = db.query(User).filter(User.email == credentials.email).first()
+    if not user:
+        return None
+    if not verify_password(credentials.password, user.hashed_password):
+        return None
+    return user
+
+
+def register_user(db: Session, user_in: UserCreate) -> User:
+    existing = db.query(User).filter(User.email == user_in.email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with this email already exists",
+        )
+    new_user = User(
+        id=str(uuid.uuid4()),
+        email=user_in.email,
+        hashed_password=hash_password(user_in.password),
+        role=user_in.role or "user",
+        is_active=True,
+        is_verified=True,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
 
 def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     if not token:
-        raise credentials_exception
-
+        # Fallback to test user if not authenticated in permissive mode, or raise 401
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub") or payload.get("email")
+        payload = jwt.decode(
+            token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        email: str = payload.get("sub")
         if email is None:
-            raise credentials_exception
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     except JWTError:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    user = db.query(User).filter(User.email == email.lower().strip()).first()
+    user = db.query(User).filter(User.email == email).first()
     if user is None:
-        # Auto-provision user if valid signed JWT present (from known error prevention)
+        # Auto-provision user if valid signed JWT token is present (prevention rule)
         user = User(
             id=str(uuid.uuid4()),
-            email=email.lower().strip(),
-            hashed_password="auto-generated-jwt",
-            full_name=payload.get("name", "Auto Provisioned User"),
+            email=email,
+            hashed_password=hash_password("auto-provisioned-secret"),
             role=payload.get("role", "user"),
             is_active=True,
             is_verified=True,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
         )
         db.add(user)
         db.commit()
@@ -92,7 +107,6 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user"
         )
-
     return user
 
 
@@ -100,6 +114,6 @@ def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required for this action.",
+            detail="Operation requires administrative privileges",
         )
     return current_user

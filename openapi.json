@@ -1,52 +1,183 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Product Catalog & Multi-Currency Pricing Service",
-    "description": "Multi-currency catalog pricing engine with ISO 4217 validation, explicit product price matrices, and exchange rate conversion fallback.",
+    "title": "Product Catalog Multi-Currency Pricing API",
+    "description": "Multi-Currency Product Catalog Pricing API",
     "version": "1.0.0"
   },
   "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health & Status"
+        ],
+        "summary": "Health Check",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "Health & Status"
+        ],
+        "summary": "Health Check",
+        "operationId": "health_check_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Register",
+        "description": "Register a new user in the platform.",
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Login",
+        "description": "Authenticate user and return JWT bearer token.",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get Me",
+        "description": "Retrieve profile of the currently authenticated user.",
+        "operationId": "get_me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/currencies": {
       "get": {
         "tags": [
           "Currencies"
         ],
-        "summary": "Get Currencies",
-        "operationId": "get_currencies_api_v1_currencies_get",
+        "summary": "List Currencies",
+        "description": "List all supported currencies in the catalog.\nOptionally filter by active status.",
+        "operationId": "list_currencies_api_v1_currencies_get",
         "parameters": [
           {
-            "name": "active_only",
+            "name": "is_active",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "description": "Filter for active currencies only",
-              "default": false,
-              "title": "Active Only"
-            },
-            "description": "Filter for active currencies only"
-          },
-          {
-            "name": "skip",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Skip"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 500,
-              "minimum": 1,
-              "default": 100,
-              "title": "Limit"
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Active"
             }
           }
         ],
@@ -56,7 +187,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CurrencyListResponse"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CurrencyResponse"
+                  },
+                  "title": "Response List Currencies Api V1 Currencies Get"
                 }
               }
             }
@@ -78,6 +213,7 @@
           "Currencies"
         ],
         "summary": "Create Currency",
+        "description": "Define a new supported currency in the catalog using ISO 4217 validation.",
         "operationId": "create_currency_api_v1_currencies_post",
         "requestBody": {
           "required": true,
@@ -113,42 +249,22 @@
         }
       }
     },
-    "/api/v1/currencies/base": {
-      "get": {
-        "tags": [
-          "Currencies"
-        ],
-        "summary": "Get Base Currency",
-        "operationId": "get_base_currency_api_v1_currencies_base_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CurrencyResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/currencies/{identifier}": {
+    "/api/v1/currencies/{currency_id_or_code}": {
       "get": {
         "tags": [
           "Currencies"
         ],
         "summary": "Get Currency",
-        "operationId": "get_currency_api_v1_currencies__identifier__get",
+        "description": "Get currency configuration by ID or 3-letter currency code.",
+        "operationId": "get_currency_api_v1_currencies__currency_id_or_code__get",
         "parameters": [
           {
-            "name": "identifier",
+            "name": "currency_id_or_code",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Identifier"
+              "title": "Currency Id Or Code"
             }
           }
         ],
@@ -180,15 +296,16 @@
           "Currencies"
         ],
         "summary": "Update Currency",
-        "operationId": "update_currency_api_v1_currencies__identifier__put",
+        "description": "Update currency properties (symbol, active status, base currency designation).",
+        "operationId": "update_currency_api_v1_currencies__currency_id_or_code__put",
         "parameters": [
           {
-            "name": "identifier",
+            "name": "currency_id_or_code",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Identifier"
+              "title": "Currency Id Or Code"
             }
           }
         ],
@@ -230,15 +347,16 @@
           "Currencies"
         ],
         "summary": "Delete Currency",
-        "operationId": "delete_currency_api_v1_currencies__identifier__delete",
+        "description": "Delete a currency configuration from the catalog. Base currency cannot be deleted.",
+        "operationId": "delete_currency_api_v1_currencies__currency_id_or_code__delete",
         "parameters": [
           {
-            "name": "identifier",
+            "name": "currency_id_or_code",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Identifier"
+              "title": "Currency Id Or Code"
             }
           }
         ],
@@ -259,68 +377,109 @@
         }
       }
     },
+    "/api/v1/exchange-rates": {
+      "get": {
+        "tags": [
+          "Currencies"
+        ],
+        "summary": "List Exchange Rates",
+        "description": "List all configured exchange rates.",
+        "operationId": "list_exchange_rates_api_v1_exchange_rates_get",
+        "parameters": [
+          {
+            "name": "is_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Active"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExchangeRateResponse"
+                  },
+                  "title": "Response List Exchange Rates Api V1 Exchange Rates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Currencies"
+        ],
+        "summary": "Create Or Update Exchange Rate",
+        "description": "Create or update an exchange rate entry between two ISO 4217 currencies.",
+        "operationId": "create_or_update_exchange_rate_api_v1_exchange_rates_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExchangeRateCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeRateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/products": {
       "get": {
         "tags": [
           "Products & Pricing"
         ],
         "summary": "List Products",
+        "description": "List products in catalog with localized pricing based on requested currency.",
         "operationId": "list_products_api_v1_products_get",
         "parameters": [
-          {
-            "name": "currency",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "ISO 4217 currency code for localized prices",
-              "title": "Currency"
-            },
-            "description": "ISO 4217 currency code for localized prices"
-          },
-          {
-            "name": "category",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Filter by category",
-              "title": "Category"
-            },
-            "description": "Filter by category"
-          },
-          {
-            "name": "search",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Search term for name/sku/description",
-              "title": "Search"
-            },
-            "description": "Search term for name/sku/description"
-          },
           {
             "name": "skip",
             "in": "query",
@@ -340,8 +499,40 @@
               "type": "integer",
               "maximum": 100,
               "minimum": 1,
-              "default": 20,
+              "default": 50,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "currency",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency"
             }
           }
         ],
@@ -351,7 +542,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProductListResponse"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProductResponse"
+                  },
+                  "title": "Response List Products Api V1 Products Get"
                 }
               }
             }
@@ -373,6 +568,7 @@
           "Products & Pricing"
         ],
         "summary": "Create Product",
+        "description": "Create a new product in the catalog.",
         "operationId": "create_product_api_v1_products_post",
         "requestBody": {
           "required": true,
@@ -390,7 +586,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProductWithLocalizedPrice"
+                  "$ref": "#/components/schemas/ProductResponse"
                 }
               }
             }
@@ -414,6 +610,7 @@
           "Products & Pricing"
         ],
         "summary": "Get Product",
+        "description": "Get single product details with localized pricing in requested currency.",
         "operationId": "get_product_api_v1_products__product_id__get",
         "parameters": [
           {
@@ -438,10 +635,8 @@
                   "type": "null"
                 }
               ],
-              "description": "ISO 4217 currency code for localized price",
               "title": "Currency"
-            },
-            "description": "ISO 4217 currency code for localized price"
+            }
           }
         ],
         "responses": {
@@ -450,7 +645,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProductWithLocalizedPrice"
+                  "$ref": "#/components/schemas/ProductResponse"
                 }
               }
             }
@@ -472,6 +667,7 @@
           "Products & Pricing"
         ],
         "summary": "Update Product",
+        "description": "Update product details.",
         "operationId": "update_product_api_v1_products__product_id__put",
         "parameters": [
           {
@@ -500,7 +696,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProductWithLocalizedPrice"
+                  "$ref": "#/components/schemas/ProductResponse"
                 }
               }
             }
@@ -522,6 +718,7 @@
           "Products & Pricing"
         ],
         "summary": "Delete Product",
+        "description": "Delete a product and its associated prices.",
         "operationId": "delete_product_api_v1_products__product_id__delete",
         "parameters": [
           {
@@ -557,6 +754,7 @@
           "Products & Pricing"
         ],
         "summary": "Get Product Prices",
+        "description": "Get all explicit configured currency prices for a product.",
         "operationId": "get_product_prices_api_v1_products__product_id__prices_get",
         "parameters": [
           {
@@ -600,8 +798,9 @@
         "tags": [
           "Products & Pricing"
         ],
-        "summary": "Set Product Price",
-        "operationId": "set_product_price_api_v1_products__product_id__prices_post",
+        "summary": "Create Or Update Product Price",
+        "description": "Configure an explicit localized price for a product in a specific currency.",
+        "operationId": "create_or_update_product_price_api_v1_products__product_id__prices_post",
         "parameters": [
           {
             "name": "product_id",
@@ -647,13 +846,14 @@
         }
       }
     },
-    "/api/v1/products/{product_id}/prices/{price_id}": {
+    "/api/v1/products/{product_id}/prices/{price_id_or_code}": {
       "put": {
         "tags": [
           "Products & Pricing"
         ],
         "summary": "Update Product Price",
-        "operationId": "update_product_price_api_v1_products__product_id__prices__price_id__put",
+        "description": "Update an explicit product price entry.",
+        "operationId": "update_product_price_api_v1_products__product_id__prices__price_id_or_code__put",
         "parameters": [
           {
             "name": "product_id",
@@ -665,12 +865,12 @@
             }
           },
           {
-            "name": "price_id",
+            "name": "price_id_or_code",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Price Id"
+              "title": "Price Id Or Code"
             }
           }
         ],
@@ -712,7 +912,8 @@
           "Products & Pricing"
         ],
         "summary": "Delete Product Price",
-        "operationId": "delete_product_price_api_v1_products__product_id__prices__price_id__delete",
+        "description": "Remove an explicit localized price entry for a product.",
+        "operationId": "delete_product_price_api_v1_products__product_id__prices__price_id_or_code__delete",
         "parameters": [
           {
             "name": "product_id",
@@ -724,12 +925,12 @@
             }
           },
           {
-            "name": "price_id",
+            "name": "price_id_or_code",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Price Id"
+              "title": "Price Id Or Code"
             }
           }
         ],
@@ -750,26 +951,26 @@
         }
       }
     },
-    "/api/v1/exchange-rates": {
+    "/api/v1/products/{product_id}/price": {
       "get": {
         "tags": [
-          "Exchange Rates"
+          "Products & Pricing"
         ],
-        "summary": "List Exchange Rates",
-        "operationId": "list_exchange_rates_api_v1_exchange_rates_get",
+        "summary": "Get Localized Product Price",
+        "description": "Calculate and return the dynamic or explicit localized price for a product.\nFalls back to exchange rate conversion or Primary Base Currency.",
+        "operationId": "get_localized_product_price_api_v1_products__product_id__price_get",
         "parameters": [
           {
-            "name": "active_only",
-            "in": "query",
-            "required": false,
+            "name": "product_id",
+            "in": "path",
+            "required": true,
             "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Active Only"
+              "type": "string",
+              "title": "Product Id"
             }
           },
           {
-            "name": "from_currency",
+            "name": "currency_code",
             "in": "query",
             "required": false,
             "schema": {
@@ -781,47 +982,10 @@
                   "type": "null"
                 }
               ],
-              "title": "From Currency"
-            }
-          },
-          {
-            "name": "to_currency",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "To Currency"
-            }
-          },
-          {
-            "name": "skip",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Skip"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 500,
-              "minimum": 1,
-              "default": 100,
-              "title": "Limit"
-            }
+              "description": "ISO 4217 Currency Code to calculate price for",
+              "title": "Currency Code"
+            },
+            "description": "ISO 4217 Currency Code to calculate price for"
           }
         ],
         "responses": {
@@ -830,7 +994,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExchangeRateListResponse"
+                  "$ref": "#/components/schemas/LocalizedPriceDetail"
                 }
               }
             }
@@ -842,316 +1006,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Exchange Rates"
-        ],
-        "summary": "Create Exchange Rate",
-        "operationId": "create_exchange_rate_api_v1_exchange_rates_post",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ExchangeRateCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExchangeRateResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/exchange-rates/{rate_id}": {
-      "get": {
-        "tags": [
-          "Exchange Rates"
-        ],
-        "summary": "Get Exchange Rate",
-        "operationId": "get_exchange_rate_api_v1_exchange_rates__rate_id__get",
-        "parameters": [
-          {
-            "name": "rate_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Rate Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExchangeRateResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "Exchange Rates"
-        ],
-        "summary": "Update Exchange Rate",
-        "operationId": "update_exchange_rate_api_v1_exchange_rates__rate_id__put",
-        "parameters": [
-          {
-            "name": "rate_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Rate Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ExchangeRateUpdate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExchangeRateResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Exchange Rates"
-        ],
-        "summary": "Delete Exchange Rate",
-        "operationId": "delete_exchange_rate_api_v1_exchange_rates__rate_id__delete",
-        "parameters": [
-          {
-            "name": "rate_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Rate Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/login": {
-      "post": {
-        "tags": [
-          "Authentication"
-        ],
-        "summary": "Login",
-        "operationId": "login_api_v1_auth_login_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserLogin"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/token": {
-      "post": {
-        "tags": [
-          "Authentication"
-        ],
-        "summary": "Login For Access Token",
-        "operationId": "login_for_access_token_api_v1_auth_token_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_login_for_access_token_api_v1_auth_token_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/auth/me": {
-      "get": {
-        "tags": [
-          "Authentication"
-        ],
-        "summary": "Get Me",
-        "operationId": "get_me_api_v1_auth_me_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/health": {
-      "get": {
-        "tags": [
-          "Health"
-        ],
-        "summary": "Health Check",
-        "operationId": "health_check_api_v1_health_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/health": {
-      "get": {
-        "tags": [
-          "Health"
-        ],
-        "summary": "Health Check",
-        "operationId": "health_check_health_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
               }
             }
           }
@@ -1161,65 +1015,6 @@
   },
   "components": {
     "schemas": {
-      "Body_login_for_access_token_api_v1_auth_token_post": {
-        "properties": {
-          "grant_type": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^password$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grant Type"
-          },
-          "username": {
-            "type": "string",
-            "title": "Username"
-          },
-          "password": {
-            "type": "string",
-            "format": "password",
-            "title": "Password"
-          },
-          "scope": {
-            "type": "string",
-            "title": "Scope",
-            "default": ""
-          },
-          "client_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Client Id"
-          },
-          "client_secret": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "format": "password",
-            "title": "Client Secret"
-          }
-        },
-        "type": "object",
-        "required": [
-          "username",
-          "password"
-        ],
-        "title": "Body_login_for_access_token_api_v1_auth_token_post"
-      },
       "CurrencyCreate": {
         "properties": {
           "code": {
@@ -1229,17 +1024,6 @@
           "symbol": {
             "type": "string",
             "title": "Symbol"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
           },
           "is_base": {
             "type": "boolean",
@@ -1259,47 +1043,11 @@
         ],
         "title": "CurrencyCreate"
       },
-      "CurrencyListResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/CurrencyResponse"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items",
-          "total"
-        ],
-        "title": "CurrencyListResponse"
-      },
       "CurrencyResponse": {
         "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
           "code": {
             "type": "string",
             "title": "Code"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
           },
           "symbol": {
             "type": "string",
@@ -1307,60 +1055,41 @@
           },
           "is_base": {
             "type": "boolean",
-            "title": "Is Base"
+            "title": "Is Base",
+            "default": false
           },
           "is_active": {
             "type": "boolean",
-            "title": "Is Active"
+            "title": "Is Active",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
           },
           "created_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Created At"
           },
           "updated_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Updated At"
           }
         },
         "type": "object",
         "required": [
-          "id",
           "code",
           "symbol",
-          "is_base",
-          "is_active"
+          "id",
+          "created_at",
+          "updated_at"
         ],
         "title": "CurrencyResponse"
       },
       "CurrencyUpdate": {
         "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
           "symbol": {
             "anyOf": [
               {
@@ -1400,16 +1129,23 @@
       },
       "ExchangeRateCreate": {
         "properties": {
-          "from_currency": {
+          "from_currency_code": {
             "type": "string",
-            "title": "From Currency"
+            "title": "From Currency Code"
           },
-          "to_currency": {
+          "to_currency_code": {
             "type": "string",
-            "title": "To Currency"
+            "title": "To Currency Code"
           },
           "rate": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
             "title": "Rate"
           },
           "is_active": {
@@ -1420,117 +1156,56 @@
         },
         "type": "object",
         "required": [
-          "from_currency",
-          "to_currency",
+          "from_currency_code",
+          "to_currency_code",
           "rate"
         ],
         "title": "ExchangeRateCreate"
       },
-      "ExchangeRateListResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ExchangeRateResponse"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items",
-          "total"
-        ],
-        "title": "ExchangeRateListResponse"
-      },
       "ExchangeRateResponse": {
         "properties": {
-          "id": {
+          "from_currency_code": {
             "type": "string",
-            "title": "Id"
+            "title": "From Currency Code"
           },
-          "from_currency": {
+          "to_currency_code": {
             "type": "string",
-            "title": "From Currency"
-          },
-          "to_currency": {
-            "type": "string",
-            "title": "To Currency"
+            "title": "To Currency Code"
           },
           "rate": {
-            "type": "number",
+            "type": "string",
             "title": "Rate"
           },
           "is_active": {
             "type": "boolean",
-            "title": "Is Active"
+            "title": "Is Active",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
           },
           "created_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Created At"
           },
           "updated_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Updated At"
           }
         },
         "type": "object",
         "required": [
-          "id",
-          "from_currency",
-          "to_currency",
+          "from_currency_code",
+          "to_currency_code",
           "rate",
-          "is_active"
+          "id",
+          "created_at",
+          "updated_at"
         ],
         "title": "ExchangeRateResponse"
-      },
-      "ExchangeRateUpdate": {
-        "properties": {
-          "rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rate"
-          },
-          "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
-          }
-        },
-        "type": "object",
-        "title": "ExchangeRateUpdate"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1545,7 +1220,7 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
-      "LocalizedPriceInfo": {
+      "LocalizedPriceDetail": {
         "properties": {
           "currency_code": {
             "type": "string",
@@ -1556,41 +1231,43 @@
             "title": "Symbol"
           },
           "price": {
-            "type": "number",
+            "type": "string",
             "title": "Price"
           },
           "formatted_price": {
             "type": "string",
             "title": "Formatted Price"
           },
+          "is_explicit": {
+            "type": "boolean",
+            "title": "Is Explicit"
+          },
           "is_converted": {
             "type": "boolean",
-            "title": "Is Converted",
-            "default": false
+            "title": "Is Converted"
           },
           "is_fallback": {
             "type": "boolean",
-            "title": "Is Fallback",
-            "default": false
+            "title": "Is Fallback"
           },
-          "exchange_rate_used": {
+          "exchange_rate": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Exchange Rate Used"
+            "title": "Exchange Rate"
           },
-          "base_currency_code": {
+          "original_currency_code": {
             "type": "string",
-            "title": "Base Currency Code"
+            "title": "Original Currency Code"
           },
-          "base_price": {
-            "type": "number",
-            "title": "Base Price"
+          "original_price": {
+            "type": "string",
+            "title": "Original Price"
           }
         },
         "type": "object",
@@ -1599,10 +1276,13 @@
           "symbol",
           "price",
           "formatted_price",
-          "base_currency_code",
-          "base_price"
+          "is_explicit",
+          "is_converted",
+          "is_fallback",
+          "original_currency_code",
+          "original_price"
         ],
-        "title": "LocalizedPriceInfo"
+        "title": "LocalizedPriceDetail"
       },
       "ProductCreate": {
         "properties": {
@@ -1632,7 +1312,28 @@
             ],
             "title": "Category"
           },
-          "sku": {
+          "base_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Base Price"
+          },
+          "base_currency_code": {
+            "type": "string",
+            "title": "Base Currency Code",
+            "default": "USD"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "image_url": {
             "anyOf": [
               {
                 "type": "string"
@@ -1641,22 +1342,24 @@
                 "type": "null"
               }
             ],
-            "title": "Sku"
+            "title": "Image Url"
           },
           "rating": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
             "title": "Rating",
-            "default": 0.0
+            "default": "5.0"
           },
           "reviews_count": {
             "type": "integer",
             "title": "Reviews Count",
             "default": 0
-          },
-          "in_stock": {
-            "type": "boolean",
-            "title": "In Stock",
-            "default": true
           },
           "id": {
             "anyOf": [
@@ -1668,50 +1371,14 @@
               }
             ],
             "title": "Id"
-          },
-          "base_price": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Base Price"
           }
         },
         "type": "object",
         "required": [
-          "name"
+          "name",
+          "base_price"
         ],
         "title": "ProductCreate"
-      },
-      "ProductListResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ProductWithLocalizedPrice"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "selected_currency": {
-            "type": "string",
-            "title": "Selected Currency"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "selected_currency"
-        ],
-        "title": "ProductListResponse"
       },
       "ProductPriceCreate": {
         "properties": {
@@ -1720,7 +1387,14 @@
             "title": "Currency Code"
           },
           "price": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
             "title": "Price"
           },
           "is_active": {
@@ -1738,6 +1412,19 @@
       },
       "ProductPriceResponse": {
         "properties": {
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          },
+          "price": {
+            "type": "string",
+            "title": "Price"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
           "id": {
             "type": "string",
             "title": "Id"
@@ -1746,50 +1433,25 @@
             "type": "string",
             "title": "Product Id"
           },
-          "currency_code": {
-            "type": "string",
-            "title": "Currency Code"
-          },
-          "price": {
-            "type": "number",
-            "title": "Price"
-          },
-          "is_active": {
-            "type": "boolean",
-            "title": "Is Active"
-          },
           "created_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Created At"
           },
           "updated_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
+            "format": "date-time",
             "title": "Updated At"
           }
         },
         "type": "object",
         "required": [
-          "id",
-          "product_id",
           "currency_code",
           "price",
-          "is_active"
+          "id",
+          "product_id",
+          "created_at",
+          "updated_at"
         ],
         "title": "ProductPriceResponse"
       },
@@ -1799,6 +1461,9 @@
             "anyOf": [
               {
                 "type": "number"
+              },
+              {
+                "type": "string"
               },
               {
                 "type": "null"
@@ -1820,6 +1485,112 @@
         },
         "type": "object",
         "title": "ProductPriceUpdate"
+      },
+      "ProductResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "base_price": {
+            "type": "string",
+            "title": "Base Price"
+          },
+          "base_currency_code": {
+            "type": "string",
+            "title": "Base Currency Code",
+            "default": "USD"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "rating": {
+            "type": "string",
+            "title": "Rating",
+            "default": "5.0"
+          },
+          "reviews_count": {
+            "type": "integer",
+            "title": "Reviews Count",
+            "default": 0
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/ProductPriceResponse"
+            },
+            "type": "array",
+            "title": "Prices",
+            "default": []
+          },
+          "localized_price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedPriceDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "base_price",
+          "id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProductResponse"
       },
       "ProductUpdate": {
         "properties": {
@@ -1856,7 +1627,21 @@
             ],
             "title": "Category"
           },
-          "sku": {
+          "base_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Price"
+          },
+          "base_currency_code": {
             "anyOf": [
               {
                 "type": "string"
@@ -1865,12 +1650,37 @@
                 "type": "null"
               }
             ],
-            "title": "Sku"
+            "title": "Base Currency Code"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
           },
           "rating": {
             "anyOf": [
               {
                 "type": "number"
+              },
+              {
+                "type": "string"
               },
               {
                 "type": "null"
@@ -1888,131 +1698,12 @@
               }
             ],
             "title": "Reviews Count"
-          },
-          "in_stock": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In Stock"
           }
         },
         "type": "object",
         "title": "ProductUpdate"
       },
-      "ProductWithLocalizedPrice": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "category": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Category"
-          },
-          "sku": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sku"
-          },
-          "rating": {
-            "type": "number",
-            "title": "Rating"
-          },
-          "reviews_count": {
-            "type": "integer",
-            "title": "Reviews Count"
-          },
-          "in_stock": {
-            "type": "boolean",
-            "title": "In Stock"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "prices": {
-            "items": {
-              "$ref": "#/components/schemas/ProductPriceResponse"
-            },
-            "type": "array",
-            "title": "Prices",
-            "default": []
-          },
-          "localized_price": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LocalizedPriceInfo"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "rating",
-          "reviews_count",
-          "in_stock"
-        ],
-        "title": "ProductWithLocalizedPrice"
-      },
-      "TokenResponse": {
+      "Token": {
         "properties": {
           "access_token": {
             "type": "string",
@@ -2032,7 +1723,38 @@
           "access_token",
           "user"
         ],
-        "title": "TokenResponse"
+        "title": "Token"
+      },
+      "UserCreate": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "UserCreate"
       },
       "UserLogin": {
         "properties": {
@@ -2055,45 +1777,47 @@
       },
       "UserResponse": {
         "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "default": "user"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "is_verified": {
+            "type": "boolean",
+            "title": "Is Verified",
+            "default": true
+          },
           "id": {
             "type": "string",
             "title": "Id"
           },
-          "email": {
+          "created_at": {
             "type": "string",
-            "title": "Email"
+            "format": "date-time",
+            "title": "Created At"
           },
-          "full_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          },
-          "role": {
+          "updated_at": {
             "type": "string",
-            "title": "Role"
-          },
-          "is_active": {
-            "type": "boolean",
-            "title": "Is Active"
-          },
-          "is_verified": {
-            "type": "boolean",
-            "title": "Is Verified"
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
         "required": [
-          "id",
           "email",
-          "role",
-          "is_active",
-          "is_verified"
+          "id",
+          "created_at",
+          "updated_at"
         ],
         "title": "UserResponse"
       },

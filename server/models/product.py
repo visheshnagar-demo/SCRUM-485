@@ -1,18 +1,17 @@
 import uuid
-from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     String,
     Boolean,
-    DateTime,
-    Float,
-    Integer,
     Numeric,
+    Integer,
+    Text,
+    DateTime,
     ForeignKey,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 from server.database import Base
 
 
@@ -21,22 +20,22 @@ class Product(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)
-    description = Column(String(1000), nullable=True)
-    category = Column(String(100), nullable=True, index=True)
-    sku = Column(String(50), nullable=True, unique=True)
-    rating = Column(Float, default=0.0)
-    reviews_count = Column(Integer, default=0)
-    in_stock = Column(Boolean, default=True)
+    description = Column(Text, nullable=True)
+    category = Column(String(100), nullable=True)
+    base_price = Column(Numeric(12, 4), nullable=False)
+    base_currency_code = Column(String(3), default="USD", nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    image_url = Column(String(500), nullable=True)
+    rating = Column(Numeric(3, 2), default=5.0, nullable=False)
+    reviews_count = Column(Integer, default=0, nullable=False)
     created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        server_default=func.now(),
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
-        onupdate=lambda: datetime.now(timezone.utc),
+        onupdate=func.now(),
+        nullable=False,
     )
 
     prices = relationship(
@@ -63,19 +62,17 @@ class ProductPrice(Base):
     price = Column(Numeric(12, 4), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        server_default=func.now(),
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at = Column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
         server_default=func.now(),
-        onupdate=lambda: datetime.now(timezone.utc),
+        onupdate=func.now(),
+        nullable=False,
     )
-
-    product = relationship("Product", back_populates="prices")
 
     __table_args__ = (
         UniqueConstraint("product_id", "currency_code", name="uq_product_currency"),
     )
+
+    product = relationship("Product", back_populates="prices")

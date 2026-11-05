@@ -1,11 +1,10 @@
-import re
+from typing import Optional
+from decimal import Decimal
 from datetime import datetime
-from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, field_validator
 
-
-# Common ISO 4217 currency codes
-VALID_ISO_4217_CODES = {
+# Comprehensive ISO 4217 currency codes
+ISO_4217_CODES = {
     "AED",
     "AFN",
     "ALL",
@@ -169,26 +168,18 @@ VALID_ISO_4217_CODES = {
 class CurrencyBase(BaseModel):
     code: str
     symbol: str
-    name: Optional[str] = None
     is_base: bool = False
     is_active: bool = True
 
     @field_validator("code")
     @classmethod
-    def validate_currency_code(cls, v: str) -> str:
-        if not v or not isinstance(v, str):
+    def validate_iso_code(cls, v: str) -> str:
+        if not isinstance(v, str):
             raise ValueError("Invalid ISO 4217 currency code")
-        code = v.strip().upper()
-        if not re.match(r"^[A-Z]{3}$", code) or code not in VALID_ISO_4217_CODES:
+        code_upper = v.strip().upper()
+        if len(code_upper) != 3 or code_upper not in ISO_4217_CODES:
             raise ValueError("Invalid ISO 4217 currency code")
-        return code
-
-    @field_validator("symbol")
-    @classmethod
-    def validate_symbol(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Currency symbol cannot be empty")
-        return v.strip()
+        return code_upper
 
 
 class CurrencyCreate(CurrencyBase):
@@ -196,25 +187,60 @@ class CurrencyCreate(CurrencyBase):
 
 
 class CurrencyUpdate(BaseModel):
-    name: Optional[str] = None
     symbol: Optional[str] = None
     is_base: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
-class CurrencyResponse(BaseModel):
+class CurrencyResponse(CurrencyBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
     model_config = ConfigDict(from_attributes=True)
 
+
+class ExchangeRateBase(BaseModel):
+    from_currency_code: str
+    to_currency_code: str
+    rate: Decimal
+    is_active: bool = True
+
+    @field_validator("from_currency_code", "to_currency_code")
+    @classmethod
+    def validate_rate_codes(cls, v: str) -> str:
+        code_upper = v.strip().upper()
+        if code_upper not in ISO_4217_CODES:
+            raise ValueError("Invalid ISO 4217 currency code")
+        return code_upper
+
+    @field_validator("rate")
+    @classmethod
+    def validate_rate(cls, v: Decimal) -> Decimal:
+        if v <= 0:
+            raise ValueError("Exchange rate must be greater than 0")
+        return v
+
+
+class ExchangeRateCreate(ExchangeRateBase):
+    pass
+
+
+class ExchangeRateUpdate(BaseModel):
+    rate: Optional[Decimal] = None
+    is_active: Optional[bool] = None
+
+    @field_validator("rate")
+    @classmethod
+    def validate_rate(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v <= 0:
+            raise ValueError("Exchange rate must be greater than 0")
+        return v
+
+
+class ExchangeRateResponse(ExchangeRateBase):
     id: str
-    code: str
-    name: Optional[str] = None
-    symbol: str
-    is_base: bool
-    is_active: bool
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
 
-
-class CurrencyListResponse(BaseModel):
-    items: List[CurrencyResponse]
-    total: int
+    model_config = ConfigDict(from_attributes=True)

@@ -1,21 +1,19 @@
-import os
 import uuid
-from datetime import datetime, timezone
+from decimal import Decimal
 import bcrypt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
-
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./catalog.db")
-
-connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
-
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from server.config import settings
 
 Base = declarative_base()
+
+connect_args = (
+    {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+)
+engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, echo=False)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db():
@@ -27,275 +25,272 @@ def get_db():
 
 
 def hash_password(password: str) -> str:
-    # Truncate to 72 bytes for bcrypt compatibility
     pwd_bytes = password.encode("utf-8")[:72]
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
-def init_db(target_engine=None):
-    from server.models import Currency, Product, ProductPrice, ExchangeRate, User  # noqa: F401
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8")[:72], hashed_password.encode("utf-8")
+        )
+    except Exception:
+        return False
 
-    bind_engine = target_engine or engine
-    Base.metadata.create_all(bind=bind_engine)
+
+def init_db(custom_engine=None):
+    from server.models.currency import Currency, ExchangeRate  # noqa: F401
+    from server.models.product import Product, ProductPrice  # noqa: F401
+    from server.models.user import User  # noqa: F401
+
+    target_engine = custom_engine or engine
+    Base.metadata.create_all(bind=target_engine)
 
 
 def seed_data(db: Session):
-    from server.models import Currency, Product, ProductPrice, ExchangeRate, User
+    from server.models.currency import Currency, ExchangeRate
+    from server.models.product import Product, ProductPrice
+    from server.models.user import User
 
-    # 1. Seed Currencies
-    default_currencies = [
-        {
-            "code": "USD",
-            "name": "US Dollar",
-            "symbol": "$",
-            "is_base": True,
-            "is_active": True,
-        },
-        {
-            "code": "EUR",
-            "name": "Euro",
-            "symbol": "€",
-            "is_base": False,
-            "is_active": True,
-        },
-        {
-            "code": "GBP",
-            "name": "British Pound",
-            "symbol": "£",
-            "is_base": False,
-            "is_active": True,
-        },
-        {
-            "code": "JPY",
-            "name": "Japanese Yen",
-            "symbol": "¥",
-            "is_base": False,
-            "is_active": True,
-        },
-        {
-            "code": "CAD",
-            "name": "Canadian Dollar",
-            "symbol": "C$",
-            "is_base": False,
-            "is_active": True,
-        },
-    ]
-
-    for curr_data in default_currencies:
-        existing = db.query(Currency).filter(Currency.code == curr_data["code"]).first()
-        if not existing:
-            curr = Currency(
-                id=str(uuid.uuid4()),
-                code=curr_data["code"],
-                name=curr_data["name"],
-                symbol=curr_data["symbol"],
-                is_base=curr_data["is_base"],
-                is_active=curr_data["is_active"],
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            )
-            try:
-                db.add(curr)
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-
-    # 2. Seed Exchange Rates
-    default_rates = [
-        {"from_currency": "USD", "to_currency": "EUR", "rate": 0.925},
-        {"from_currency": "USD", "to_currency": "GBP", "rate": 0.800},
-        {"from_currency": "USD", "to_currency": "JPY", "rate": 152.00},
-        {"from_currency": "USD", "to_currency": "CAD", "rate": 1.365},
-    ]
-
-    for rate_data in default_rates:
-        existing = (
-            db.query(ExchangeRate)
-            .filter(
-                ExchangeRate.from_currency == rate_data["from_currency"],
-                ExchangeRate.to_currency == rate_data["to_currency"],
-            )
-            .first()
-        )
-        if not existing:
-            rate = ExchangeRate(
-                id=str(uuid.uuid4()),
-                from_currency=rate_data["from_currency"],
-                to_currency=rate_data["to_currency"],
-                rate=rate_data["rate"],
-                is_active=True,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            )
-            try:
-                db.add(rate)
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-
-    # 3. Seed Products and Prices
-    sample_products = [
-        {
-            "id": "prod-8832",
-            "name": "Wireless Headphones",
-            "description": "Premium over-ear wireless headphones with hybrid active noise cancelling and spatial audio.",
-            "category": "Audio",
-            "sku": "WH-8832",
-            "rating": 4.9,
-            "reviews_count": 428,
-            "in_stock": True,
-            "prices": [
-                {"currency_code": "USD", "price": 149.99, "is_active": True},
-                {"currency_code": "EUR", "price": 139.99, "is_active": True},
-                {"currency_code": "GBP", "price": 119.99, "is_active": True},
-            ],
-        },
-        {
-            "id": "prod-8833",
-            "name": "Smartwatch",
-            "description": "Next-gen smartwatch with AMOLED display, health metrics, and dual GPS.",
-            "category": "Wearables",
-            "sku": "SW-8833",
-            "rating": 4.8,
-            "reviews_count": 280,
-            "in_stock": True,
-            "prices": [
-                {"currency_code": "USD", "price": 249.99, "is_active": True},
-            ],
-        },
-        {
-            "id": "prod-8834",
-            "name": "Portable Speaker",
-            "description": "Rugged IPX7 waterproof Bluetooth speaker with 360-degree immersive sound.",
-            "category": "Audio",
-            "sku": "PS-8834",
-            "rating": 4.7,
-            "reviews_count": 194,
-            "in_stock": True,
-            "prices": [
-                {"currency_code": "USD", "price": 79.99, "is_active": True},
-            ],
-        },
-        {
-            "id": "prod-8835",
-            "name": "Studio Earbuds Pro",
-            "description": "Compact wireless earbuds with adaptive ANC and studio acoustic drivers.",
-            "category": "Audio",
-            "sku": "EP-8835",
-            "rating": 4.9,
-            "reviews_count": 312,
-            "in_stock": True,
-            "prices": [
-                {"currency_code": "USD", "price": 119.99, "is_active": True},
-            ],
-        },
-        {
-            "id": "prod-8836",
-            "name": "Wireless Charging Dock",
-            "description": "Qi2 15W high-speed multi-device charging stand for phone and accessories.",
-            "category": "Accessories",
-            "sku": "WC-8836",
-            "rating": 4.6,
-            "reviews_count": 150,
-            "in_stock": True,
-            "prices": [
-                {"currency_code": "USD", "price": 49.99, "is_active": True},
-            ],
-        },
-        {
-            "id": "prod-8837",
-            "name": "Hi-Fi Audio DAC Amplifier",
-            "description": "Reference-grade 32-bit / 768kHz digital-to-analog converter and headphone amplifier.",
-            "category": "Audio",
-            "sku": "DAC-8837",
-            "rating": 4.9,
-            "reviews_count": 89,
-            "in_stock": True,
-            "prices": [
-                {"currency_code": "USD", "price": 189.99, "is_active": True},
-            ],
-        },
-    ]
-
-    for p_data in sample_products:
-        prod = db.query(Product).filter(Product.id == p_data["id"]).first()
-        if not prod:
-            prod = Product(
-                id=p_data["id"],
-                name=p_data["name"],
-                description=p_data["description"],
-                category=p_data["category"],
-                sku=p_data["sku"],
-                rating=p_data["rating"],
-                reviews_count=p_data["reviews_count"],
-                in_stock=p_data["in_stock"],
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-            )
-            try:
-                db.add(prod)
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-
-        for price_data in p_data["prices"]:
-            existing_price = (
-                db.query(ProductPrice)
-                .filter(
-                    ProductPrice.product_id == p_data["id"],
-                    ProductPrice.currency_code == price_data["currency_code"],
-                )
-                .first()
-            )
-            if not existing_price:
-                pp = ProductPrice(
-                    id=str(uuid.uuid4()),
-                    product_id=p_data["id"],
-                    currency_code=price_data["currency_code"],
-                    price=price_data["price"],
-                    is_active=price_data["is_active"],
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
-                )
-                try:
-                    db.add(pp)
-                    db.commit()
-                except IntegrityError:
-                    db.rollback()
-
-    # 4. Seed Test Users
-    test_users = [
+    # 1. Seed Users (Test and Admin)
+    users_to_seed = [
         {
             "email": "test@example.com",
             "password": "testpassword",
-            "full_name": "Test User",
             "role": "user",
         },
         {
             "email": "admin@example.com",
             "password": "adminpassword",
-            "full_name": "Admin User",
             "role": "admin",
         },
     ]
-
-    for u_data in test_users:
-        existing_u = db.query(User).filter(User.email == u_data["email"]).first()
-        if not existing_u:
-            user = User(
+    for u_data in users_to_seed:
+        existing = db.query(User).filter(User.email == u_data["email"]).first()
+        if not existing:
+            new_user = User(
                 id=str(uuid.uuid4()),
                 email=u_data["email"],
                 hashed_password=hash_password(u_data["password"]),
-                full_name=u_data["full_name"],
                 role=u_data["role"],
                 is_active=True,
                 is_verified=True,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
             )
+            db.add(new_user)
             try:
-                db.add(user)
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+
+    # 2. Seed Supported Currencies (USD, EUR, GBP, JPY, CAD)
+    currencies_to_seed = [
+        {"code": "USD", "symbol": "$", "is_base": True, "is_active": True},
+        {"code": "EUR", "symbol": "€", "is_base": False, "is_active": True},
+        {"code": "GBP", "symbol": "£", "is_base": False, "is_active": True},
+        {"code": "JPY", "symbol": "¥", "is_base": False, "is_active": True},
+        {"code": "CAD", "symbol": "C$", "is_base": False, "is_active": True},
+    ]
+    for c_data in currencies_to_seed:
+        existing = db.query(Currency).filter(Currency.code == c_data["code"]).first()
+        if not existing:
+            new_curr = Currency(
+                id=str(uuid.uuid4()),
+                code=c_data["code"],
+                symbol=c_data["symbol"],
+                is_base=c_data["is_base"],
+                is_active=c_data["is_active"],
+            )
+            db.add(new_curr)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+
+    # 3. Seed Exchange Rates from USD
+    rates_to_seed = [
+        {
+            "from_currency_code": "USD",
+            "to_currency_code": "EUR",
+            "rate": Decimal("0.925000"),
+        },
+        {
+            "from_currency_code": "USD",
+            "to_currency_code": "GBP",
+            "rate": Decimal("0.800000"),
+        },
+        {
+            "from_currency_code": "USD",
+            "to_currency_code": "JPY",
+            "rate": Decimal("152.000000"),
+        },
+        {
+            "from_currency_code": "USD",
+            "to_currency_code": "CAD",
+            "rate": Decimal("1.350000"),
+        },
+        {
+            "from_currency_code": "USD",
+            "to_currency_code": "USD",
+            "rate": Decimal("1.000000"),
+        },
+    ]
+    for r_data in rates_to_seed:
+        existing = (
+            db.query(ExchangeRate)
+            .filter(
+                ExchangeRate.from_currency_code == r_data["from_currency_code"],
+                ExchangeRate.to_currency_code == r_data["to_currency_code"],
+            )
+            .first()
+        )
+        if not existing:
+            new_rate = ExchangeRate(
+                id=str(uuid.uuid4()),
+                from_currency_code=r_data["from_currency_code"],
+                to_currency_code=r_data["to_currency_code"],
+                rate=r_data["rate"],
+                is_active=True,
+            )
+            db.add(new_rate)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+
+    # 4. Seed Products & Explicit Pricing Matrices
+    # Sample product prod-8832 ("Wireless Headphones")
+    headphones = db.query(Product).filter(Product.name == "Wireless Headphones").first()
+    if not headphones:
+        headphones = Product(
+            id="prod-8832",
+            name="Wireless Headphones",
+            description="Over-ear high fidelity with Active Noise Cancellation (ANC)",
+            category="Audio & Wearables",
+            base_price=Decimal("149.99"),
+            base_currency_code="USD",
+            is_active=True,
+            rating=Decimal("4.9"),
+            reviews_count=428,
+        )
+        db.add(headphones)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            headphones = (
+                db.query(Product).filter(Product.name == "Wireless Headphones").first()
+            )
+
+    if headphones:
+        # Explicit EUR and GBP prices for prod-8832
+        explicit_prices = [
+            {
+                "product_id": headphones.id,
+                "currency_code": "USD",
+                "price": Decimal("149.99"),
+                "is_active": True,
+            },
+            {
+                "product_id": headphones.id,
+                "currency_code": "EUR",
+                "price": Decimal("139.99"),
+                "is_active": True,
+            },
+            {
+                "product_id": headphones.id,
+                "currency_code": "GBP",
+                "price": Decimal("119.99"),
+                "is_active": True,
+            },
+        ]
+        for p_data in explicit_prices:
+            existing_p = (
+                db.query(ProductPrice)
+                .filter(
+                    ProductPrice.product_id == p_data["product_id"],
+                    ProductPrice.currency_code == p_data["currency_code"],
+                )
+                .first()
+            )
+            if not existing_p:
+                new_price = ProductPrice(
+                    id=str(uuid.uuid4()),
+                    product_id=p_data["product_id"],
+                    currency_code=p_data["currency_code"],
+                    price=p_data["price"],
+                    is_active=p_data["is_active"],
+                )
+                db.add(new_price)
+                try:
+                    db.commit()
+                except IntegrityError:
+                    db.rollback()
+
+    # Additional standard products from design spec
+    other_products = [
+        {
+            "id": "prod-1001",
+            "name": "Smartwatch",
+            "description": "AMOLED display, Dual GPS smartwatch",
+            "category": "Wearables",
+            "base_price": Decimal("249.99"),
+            "rating": Decimal("4.8"),
+            "reviews_count": 280,
+        },
+        {
+            "id": "prod-1002",
+            "name": "Portable Speaker",
+            "description": "360 sound, IPX7 waterproof portable speaker",
+            "category": "Audio",
+            "base_price": Decimal("79.99"),
+            "rating": Decimal("4.7"),
+            "reviews_count": 194,
+        },
+        {
+            "id": "prod-1003",
+            "name": "Studio Earbuds Pro",
+            "description": "Active Noise Cancellation studio earbuds",
+            "category": "Audio",
+            "base_price": Decimal("119.99"),
+            "rating": Decimal("4.9"),
+            "reviews_count": 312,
+        },
+        {
+            "id": "prod-1004",
+            "name": "Wireless Charging Dock",
+            "description": "Qi2 15W Fast Charge wireless dock",
+            "category": "Accessories",
+            "base_price": Decimal("49.99"),
+            "rating": Decimal("4.6"),
+            "reviews_count": 150,
+        },
+        {
+            "id": "prod-1005",
+            "name": "Hi-Fi Audio DAC Amplifier",
+            "description": "32-bit / 768kHz reference grade DAC amplifier",
+            "category": "Audio",
+            "base_price": Decimal("189.99"),
+            "rating": Decimal("4.9"),
+            "reviews_count": 88,
+        },
+    ]
+    for op in other_products:
+        existing = db.query(Product).filter(Product.id == op["id"]).first()
+        if not existing:
+            new_prod = Product(
+                id=op["id"],
+                name=op["name"],
+                description=op["description"],
+                category=op["category"],
+                base_price=op["base_price"],
+                base_currency_code="USD",
+                is_active=True,
+                rating=op["rating"],
+                reviews_count=op["reviews_count"],
+            )
+            db.add(new_prod)
+            try:
                 db.commit()
             except IntegrityError:
                 db.rollback()

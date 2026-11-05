@@ -1,28 +1,29 @@
 import uuid
-from datetime import datetime, timezone
-from typing import Optional, List, Tuple
+from decimal import Decimal
+from typing import List, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 
-from server.models.currency import Currency
-from server.schemas.currency import CurrencyCreate, CurrencyUpdate
+from server.models.currency import Currency, ExchangeRate
+from server.schemas.currency import CurrencyCreate, CurrencyUpdate, ExchangeRateCreate
 
 
 class CurrencyService:
     @staticmethod
-    def get_by_id_or_code(db: Session, identifier: str) -> Optional[Currency]:
-        ident = identifier.strip()
-        return (
-            db.query(Currency)
-            .filter(
-                or_(
-                    Currency.id == ident,
-                    Currency.code == ident.upper(),
-                )
+    def get_currencies(db: Session, is_active: Optional[bool] = None) -> List[Currency]:
+        query = db.query(Currency)
+        if is_active is not None:
+            query = query.filter(Currency.is_active == is_active)
+        return query.order_by(Currency.is_base.desc(), Currency.code.asc()).all()
+
+    @staticmethod
+    def get_currency_by_id_or_code(db: Session, identifier: str) -> Optional[Currency]:
+        curr = db.query(Currency).filter(Currency.id == identifier).first()
+        if not curr:
+            curr = (
+                db.query(Currency).filter(Currency.code == identifier.upper()).first()
             )
-            .first()
-        )
+        return curr
 
     @staticmethod
     def get_base_currency(db: Session) -> Optional[Currency]:
@@ -32,136 +33,173 @@ class CurrencyService:
             .first()
         )
         if not base:
-            base = db.query(Currency).filter(Currency.is_base == True).first()
-        if not base:
             base = db.query(Currency).filter(Currency.code == "USD").first()
-        if not base:
-            base = db.query(Currency).first()
         return base
 
     @staticmethod
-    def list_currencies(
-        db: Session, active_only: bool = False, skip: int = 0, limit: int = 100
-    ) -> Tuple[List[Currency], int]:
-        query = db.query(Currency)
-        if active_only:
-            query = query.filter(Currency.is_active == True)
-        total = query.count()
-        items = (
-            query.order_by(Currency.is_base.desc(), Currency.code.asc())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-        return items, total
-
-    @staticmethod
     def create_currency(db: Session, currency_in: CurrencyCreate) -> Currency:
-        code = currency_in.code.strip().upper()
-        existing = db.query(Currency).filter(Currency.code == code).first()
+        existing = db.query(Currency).filter(Currency.code == currency_in.code).first()
         if existing:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Currency code '{code}' already exists.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Currency with code '{currency_in.code}' already exists",
             )
 
-        # If this is designated as base currency, reset existing base currencies
         if currency_in.is_base:
+            # Set other currencies is_base = False
             db.query(Currency).filter(Currency.is_base == True).update(
                 {"is_base": False}
             )
-            db.commit()
 
-        # If this is the very first currency added, make it base by default
-        is_first = db.query(Currency).count() == 0
-        is_base = currency_in.is_base or is_first
-
-        currency = Currency(
+        new_currency = Currency(
             id=str(uuid.uuid4()),
-            code=code,
-            name=currency_in.name or code,
+            code=currency_in.code,
             symbol=currency_in.symbol,
-            is_base=is_base,
+            is_base=currency_in.is_base,
             is_active=currency_in.is_active,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
         )
-        db.add(currency)
+        db.add(new_currency)
         db.commit()
-        db.refresh(currency)
-        return currency
+        db.refresh(new_currency)
+        return new_currency
 
     @staticmethod
     def update_currency(
         db: Session, identifier: str, currency_in: CurrencyUpdate
     ) -> Currency:
-        currency = CurrencyService.get_by_id_or_code(db, identifier)
-        if not currency:
+        curr = CurrencyService.get_currency_by_id_or_code(db, identifier)
+        if not curr:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Currency '{identifier}' not found.",
+                status_code=status.HTTP_404_NOT_FOUND, detail="Currency not found"
             )
 
         # Edge case: Deactivating a currency currently assigned as Primary Base Currency is blocked
-        if (
-            currency_in.is_active is False
-            and currency.is_base
-            and currency_in.is_base is not True
-        ):
+        if currency_in.is_active is False and curr.is_base:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Cannot deactivate primary base currency. Select a new base currency first.",
+                detail="Cannot deactivate the Primary Base Currency. Designate a new base currency first.",
             )
 
         if currency_in.is_base is True:
-            # Demote any other base currency
+            # Demote existing base currency
             db.query(Currency).filter(
-                Currency.id != currency.id, Currency.is_base == True
+                Currency.id != curr.id, Currency.is_base == True
             ).update({"is_base": False})
-            currency.is_base = True
-            currency.is_active = True  # Base currency must be active
-        elif currency_in.is_base is False and currency.is_base:
-            # Cannot un-base without selecting another base
-            other_active = (
-                db.query(Currency)
-                .filter(Currency.id != currency.id, Currency.is_active == True)
-                .first()
+            curr.is_base = True
+            curr.is_active = True  # Base currency must be active
+        elif currency_in.is_base is False and curr.is_base:
+            # Cannot un-base without assigning another
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot remove base status without designating another currency as base",
             )
-            if not other_active:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Cannot unset base currency when no other active currency exists to be base.",
-                )
-            currency.is_base = False
 
-        if currency_in.name is not None:
-            currency.name = currency_in.name
         if currency_in.symbol is not None:
-            currency.symbol = currency_in.symbol
+            curr.symbol = currency_in.symbol
         if currency_in.is_active is not None and not (
-            currency.is_base and currency_in.is_active is False
+            curr.is_base and not currency_in.is_active
         ):
-            currency.is_active = currency_in.is_active
+            curr.is_active = currency_in.is_active
 
-        currency.updated_at = datetime.now(timezone.utc)
         db.commit()
-        db.refresh(currency)
-        return currency
+        db.refresh(curr)
+        return curr
 
     @staticmethod
     def delete_currency(db: Session, identifier: str) -> None:
-        currency = CurrencyService.get_by_id_or_code(db, identifier)
-        if not currency:
+        curr = CurrencyService.get_currency_by_id_or_code(db, identifier)
+        if not curr:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Currency '{identifier}' not found.",
+                status_code=status.HTTP_404_NOT_FOUND, detail="Currency not found"
             )
 
-        if currency.is_base:
+        if curr.is_base:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete the primary base currency.",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot delete the Primary Base Currency.",
             )
 
-        db.delete(currency)
+        db.delete(curr)
         db.commit()
+
+    @staticmethod
+    def get_exchange_rates(
+        db: Session, is_active: Optional[bool] = None
+    ) -> List[ExchangeRate]:
+        query = db.query(ExchangeRate)
+        if is_active is not None:
+            query = query.filter(ExchangeRate.is_active == is_active)
+        return query.all()
+
+    @staticmethod
+    def get_exchange_rate(
+        db: Session, from_code: str, to_code: str
+    ) -> Optional[Decimal]:
+        from_code = from_code.upper()
+        to_code = to_code.upper()
+        if from_code == to_code:
+            return Decimal("1.000000")
+
+        rate_obj = (
+            db.query(ExchangeRate)
+            .filter(
+                ExchangeRate.from_currency_code == from_code,
+                ExchangeRate.to_currency_code == to_code,
+                ExchangeRate.is_active == True,
+            )
+            .first()
+        )
+
+        if rate_obj:
+            return Decimal(str(rate_obj.rate))
+
+        # Check inverse
+        inv_rate_obj = (
+            db.query(ExchangeRate)
+            .filter(
+                ExchangeRate.from_currency_code == to_code,
+                ExchangeRate.to_currency_code == from_code,
+                ExchangeRate.is_active == True,
+            )
+            .first()
+        )
+
+        if inv_rate_obj and inv_rate_obj.rate > 0:
+            return Decimal("1.000000") / Decimal(str(inv_rate_obj.rate))
+
+        return None
+
+    @staticmethod
+    def create_or_update_exchange_rate(
+        db: Session, rate_in: ExchangeRateCreate
+    ) -> ExchangeRate:
+        from_code = rate_in.from_currency_code.upper()
+        to_code = rate_in.to_currency_code.upper()
+
+        existing = (
+            db.query(ExchangeRate)
+            .filter(
+                ExchangeRate.from_currency_code == from_code,
+                ExchangeRate.to_currency_code == to_code,
+            )
+            .first()
+        )
+
+        if existing:
+            existing.rate = rate_in.rate
+            existing.is_active = rate_in.is_active
+            db.commit()
+            db.refresh(existing)
+            return existing
+
+        new_rate = ExchangeRate(
+            id=str(uuid.uuid4()),
+            from_currency_code=from_code,
+            to_currency_code=to_code,
+            rate=rate_in.rate,
+            is_active=rate_in.is_active,
+        )
+        db.add(new_rate)
+        db.commit()
+        db.refresh(new_rate)
+        return new_rate

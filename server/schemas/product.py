@@ -1,32 +1,31 @@
-import re
-from datetime import datetime
 from typing import Optional, List
+from decimal import Decimal
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, field_validator
+from server.schemas.currency import ISO_4217_CODES
 
 
 class ProductPriceBase(BaseModel):
     currency_code: str
-    price: float
+    price: Decimal
     is_active: bool = True
 
     @field_validator("currency_code")
     @classmethod
     def validate_currency_code(cls, v: str) -> str:
-        if not v or not isinstance(v, str):
+        code_upper = v.strip().upper()
+        if code_upper not in ISO_4217_CODES:
             raise ValueError("Invalid ISO 4217 currency code")
-        code = v.strip().upper()
-        if not re.match(r"^[A-Z]{3}$", code):
-            raise ValueError("Invalid ISO 4217 currency code")
-        return code
+        return code_upper
 
     @field_validator("price")
     @classmethod
-    def validate_price(cls, v: float) -> float:
-        if v is None or v < 0:
+    def validate_price(cls, v: Decimal) -> Decimal:
+        if v < Decimal("0.00"):
             raise ValueError(
                 "Price must be a positive decimal value greater than or equal to 0.00"
             )
-        return round(float(v), 4)
+        return v
 
 
 class ProductPriceCreate(ProductPriceBase):
@@ -34,91 +33,110 @@ class ProductPriceCreate(ProductPriceBase):
 
 
 class ProductPriceUpdate(BaseModel):
-    price: Optional[float] = None
+    price: Optional[Decimal] = None
     is_active: Optional[bool] = None
 
     @field_validator("price")
     @classmethod
-    def validate_price(cls, v: Optional[float]) -> Optional[float]:
-        if v is not None and v < 0:
+    def validate_price(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < Decimal("0.00"):
             raise ValueError(
                 "Price must be a positive decimal value greater than or equal to 0.00"
             )
-        if v is not None:
-            return round(float(v), 4)
         return v
 
 
-class ProductPriceResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class ProductPriceResponse(ProductPriceBase):
     id: str
     product_id: str
-    currency_code: str
-    price: float
-    is_active: bool
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
 
-
-class LocalizedPriceInfo(BaseModel):
-    currency_code: str
-    symbol: str
-    price: float
-    formatted_price: str
-    is_converted: bool = False
-    is_fallback: bool = False
-    exchange_rate_used: Optional[float] = None
-    base_currency_code: str
-    base_price: float
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductBase(BaseModel):
     name: str
     description: Optional[str] = None
     category: Optional[str] = None
-    sku: Optional[str] = None
-    rating: float = 0.0
+    base_price: Decimal
+    base_currency_code: str = "USD"
+    is_active: bool = True
+    image_url: Optional[str] = None
+    rating: Decimal = Decimal("5.0")
     reviews_count: int = 0
-    in_stock: bool = True
+
+    @field_validator("base_price")
+    @classmethod
+    def validate_base_price(cls, v: Decimal) -> Decimal:
+        if v < Decimal("0.00"):
+            raise ValueError(
+                "Price must be a positive decimal value greater than or equal to 0.00"
+            )
+        return v
+
+    @field_validator("base_currency_code")
+    @classmethod
+    def validate_base_currency(cls, v: str) -> str:
+        code_upper = v.strip().upper()
+        if code_upper not in ISO_4217_CODES:
+            raise ValueError("Invalid ISO 4217 currency code")
+        return code_upper
 
 
 class ProductCreate(ProductBase):
     id: Optional[str] = None
-    base_price: Optional[float] = None  # If provided, creates initial base price
 
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
-    sku: Optional[str] = None
-    rating: Optional[float] = None
+    base_price: Optional[Decimal] = None
+    base_currency_code: Optional[str] = None
+    is_active: Optional[bool] = None
+    image_url: Optional[str] = None
+    rating: Optional[Decimal] = None
     reviews_count: Optional[int] = None
-    in_stock: Optional[bool] = None
+
+    @field_validator("base_price")
+    @classmethod
+    def validate_base_price(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < Decimal("0.00"):
+            raise ValueError(
+                "Price must be a positive decimal value greater than or equal to 0.00"
+            )
+        return v
+
+    @field_validator("base_currency_code")
+    @classmethod
+    def validate_base_currency(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            code_upper = v.strip().upper()
+            if code_upper not in ISO_4217_CODES:
+                raise ValueError("Invalid ISO 4217 currency code")
+            return code_upper
+        return v
 
 
-class ProductResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class LocalizedPriceDetail(BaseModel):
+    currency_code: str
+    symbol: str
+    price: Decimal
+    formatted_price: str
+    is_explicit: bool
+    is_converted: bool
+    is_fallback: bool
+    exchange_rate: Optional[Decimal] = None
+    original_currency_code: str
+    original_price: Decimal
 
+
+class ProductResponse(ProductBase):
     id: str
-    name: str
-    description: Optional[str] = None
-    category: Optional[str] = None
-    sku: Optional[str] = None
-    rating: float
-    reviews_count: int
-    in_stock: bool
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
     prices: List[ProductPriceResponse] = []
+    localized_price: Optional[LocalizedPriceDetail] = None
 
-
-class ProductWithLocalizedPrice(ProductResponse):
-    localized_price: Optional[LocalizedPriceInfo] = None
-
-
-class ProductListResponse(BaseModel):
-    items: List[ProductWithLocalizedPrice]
-    total: int
-    selected_currency: str
+    model_config = ConfigDict(from_attributes=True)

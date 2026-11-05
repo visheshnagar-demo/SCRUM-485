@@ -1,119 +1,155 @@
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from server.database import get_db
+from server.models.product import Product
 from server.schemas.product import (
     ProductCreate,
     ProductUpdate,
-    ProductListResponse,
-    ProductWithLocalizedPrice,
+    ProductResponse,
     ProductPriceCreate,
     ProductPriceUpdate,
     ProductPriceResponse,
+    LocalizedPriceDetail,
 )
 from server.services.pricing_service import PricingService
 
-router = APIRouter(prefix="/api/v1/products", tags=["Products & Pricing"])
+router = APIRouter(tags=["Products & Pricing"])
 
 
-@router.get("", response_model=ProductListResponse)
+@router.get("/products", response_model=List[ProductResponse])
 def list_products(
-    currency: Optional[str] = Query(
-        None, description="ISO 4217 currency code for localized prices"
-    ),
-    category: Optional[str] = Query(None, description="Filter by category"),
-    search: Optional[str] = Query(
-        None, description="Search term for name/sku/description"
-    ),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
+    category: Optional[str] = None,
+    currency: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    items, total, selected_curr = PricingService.list_products(
-        db,
-        currency_code=currency,
-        category=category,
-        search=search,
-        skip=skip,
-        limit=limit,
-    )
-    return ProductListResponse(
-        items=items, total=total, selected_currency=selected_curr
+    """
+    List products in catalog with localized pricing based on requested currency.
+    """
+    return PricingService.get_products(
+        db, skip=skip, limit=limit, category=category, currency_code=currency
     )
 
 
 @router.post(
-    "", response_model=ProductWithLocalizedPrice, status_code=status.HTTP_201_CREATED
+    "/products", response_model=ProductResponse, status_code=status.HTTP_201_CREATED
 )
 def create_product(product_in: ProductCreate, db: Session = Depends(get_db)):
-    return PricingService.create_product(db, product_in)
+    """
+    Create a new product in the catalog.
+    """
+    p = PricingService.create_product(db, product_in)
+    return PricingService.get_product_by_id(db, p.id)
 
 
-@router.get("/{product_id}", response_model=ProductWithLocalizedPrice)
+@router.get("/products/{product_id}", response_model=ProductResponse)
 def get_product(
-    product_id: str,
-    currency: Optional[str] = Query(
-        None, description="ISO 4217 currency code for localized price"
-    ),
-    db: Session = Depends(get_db),
+    product_id: str, currency: Optional[str] = None, db: Session = Depends(get_db)
 ):
-    return PricingService.get_product(db, product_id, currency_code=currency)
+    """
+    Get single product details with localized pricing in requested currency.
+    """
+    prod = PricingService.get_product_by_id(db, product_id, currency_code=currency)
+    if not prod:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
+        )
+    return prod
 
 
-@router.put("/{product_id}", response_model=ProductWithLocalizedPrice)
+@router.put("/products/{product_id}", response_model=ProductResponse)
 def update_product(
-    product_id: str,
-    product_in: ProductUpdate,
-    db: Session = Depends(get_db),
+    product_id: str, product_in: ProductUpdate, db: Session = Depends(get_db)
 ):
-    return PricingService.update_product(db, product_id, product_in)
+    """
+    Update product details.
+    """
+    p = PricingService.update_product(db, product_id, product_in)
+    return PricingService.get_product_by_id(db, p.id)
 
 
-@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/products/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_product(product_id: str, db: Session = Depends(get_db)):
+    """
+    Delete a product and its associated prices.
+    """
     PricingService.delete_product(db, product_id)
     return None
 
 
-# --- Product Pricing Matrix Endpoints ---
-
-
-@router.get("/{product_id}/prices", response_model=List[ProductPriceResponse])
+# Product Multi-Currency Pricing Matrix Endpoints
+@router.get("/products/{product_id}/prices", response_model=List[ProductPriceResponse])
 def get_product_prices(product_id: str, db: Session = Depends(get_db)):
-    return PricingService.get_prices(db, product_id)
+    """
+    Get all explicit configured currency prices for a product.
+    """
+    return PricingService.get_product_prices(db, product_id)
 
 
 @router.post(
-    "/{product_id}/prices",
+    "/products/{product_id}/prices",
     response_model=ProductPriceResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def set_product_price(
-    product_id: str,
-    price_in: ProductPriceCreate,
-    db: Session = Depends(get_db),
+def create_or_update_product_price(
+    product_id: str, price_in: ProductPriceCreate, db: Session = Depends(get_db)
 ):
-    return PricingService.set_price(db, product_id, price_in)
+    """
+    Configure an explicit localized price for a product in a specific currency.
+    """
+    return PricingService.set_product_price(db, product_id, price_in)
 
 
-@router.put("/{product_id}/prices/{price_id}", response_model=ProductPriceResponse)
+@router.put(
+    "/products/{product_id}/prices/{price_id_or_code}",
+    response_model=ProductPriceResponse,
+)
 def update_product_price(
     product_id: str,
-    price_id: str,
+    price_id_or_code: str,
     price_in: ProductPriceUpdate,
     db: Session = Depends(get_db),
 ):
-    return PricingService.update_price(db, product_id, price_id, price_in)
+    """
+    Update an explicit product price entry.
+    """
+    return PricingService.update_product_price(
+        db, product_id, price_id_or_code, price_in
+    )
 
 
 @router.delete(
-    "/{product_id}/prices/{price_id}", status_code=status.HTTP_204_NO_CONTENT
+    "/products/{product_id}/prices/{price_id_or_code}",
+    status_code=status.HTTP_204_NO_CONTENT,
 )
 def delete_product_price(
+    product_id: str, price_id_or_code: str, db: Session = Depends(get_db)
+):
+    """
+    Remove an explicit localized price entry for a product.
+    """
+    PricingService.delete_product_price(db, product_id, price_id_or_code)
+    return None
+
+
+@router.get("/products/{product_id}/price", response_model=LocalizedPriceDetail)
+def get_localized_product_price(
     product_id: str,
-    price_id: str,
+    currency_code: Optional[str] = Query(
+        None, description="ISO 4217 Currency Code to calculate price for"
+    ),
     db: Session = Depends(get_db),
 ):
-    PricingService.delete_price(db, product_id, price_id)
-    return None
+    """
+    Calculate and return the dynamic or explicit localized price for a product.
+    Falls back to exchange rate conversion or Primary Base Currency.
+    """
+    p = db.query(Product).filter(Product.id == product_id).first()
+    if not p:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
+        )
+    return PricingService.calculate_localized_price(db, p, currency_code)
